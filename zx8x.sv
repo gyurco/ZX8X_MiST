@@ -64,7 +64,7 @@ assign LED = ~ioctl_download & ~tape_ready;
 localparam CONF_STR = 
 {
 	"ZX8X;;",
-	"F,P,Load P file;",
+	"F,O  P  ,Load tape;",
 	"O4,Model,ZX80,ZX81;",
 	"O5,RAM size,1k,16k;",
 	"O6,Video frequency,50Hz,60Hz;",
@@ -227,15 +227,24 @@ end
 reg   [7:0] rom[12288];
 reg   [7:0] ram[16384];
 wire [12:0] rom_a  = nRFSH ? addr[12:0] : { addr[12:9], ram_data_latch[5:0], row_counter };
-wire [13:0] ram_a  = tapewrite ? (tape_addr + 13'h8) : mem_16k ? addr[13:0] : { 4'b0000, addr[9:0] };
+wire [13:0] tape_load_addr = (ioctl_index[7:6] == 1) ? tape_addr + 4'd8 : tape_addr - 1'd1;
+wire [13:0] ram_a  = tapewrite ? tape_load_addr : mem_16k ? addr[13:0] : { 4'b0000, addr[9:0] };
 wire			rom_e  = ~addr[14] & (~addr[12] | zx81);
 wire        ram_e  = addr[14];
 wire        ram_we = tapewrite | (~(nWR | nMREQ) & addr[14]);
 wire  [7:0] ram_in = tapewrite ? tape_in_byte : cpu_dout;
 wire  [7:0] rom_out;
 wire  [7:0] ram_out;
-wire  [7:0] mem_out = tapeloader ? tape_loader_patch[addr - 13'h347] : rom_e ? rom_out : (ram_e ? ram_out : 8'd0);
+wire  [7:0] mem_out;
 
+always_comb begin
+	casex({ tapeloader, rom_e, ram_e })
+		'b110: mem_out = tape_loader_patch[addr - (zx81 ? 13'h0347 : 13'h0207)];
+		'b010: mem_out = rom_out;
+		'b001: mem_out = ram_out;
+		default: mem_out = 8'd0;
+	endcase
+end
 always @(posedge SPI_SCK) begin
 	if (ioctl_wr & !ioctl_index) begin
 		rom[ioctl_addr] <= ioctl_dout;
@@ -260,8 +269,8 @@ reg         tapeloader, tapewrite;
 reg  [13:0] tape_addr;
 reg   [7:0] tape_in_byte;
 reg         tape_ready;  // there is data in the tape memory
-// patch the load ROM routine to loop until the memory is filled from $4009 (.p file)
-// xor a; loop: nop or scf, jr nc loop, jp h0207
+// patch the load ROM routines to loop until the memory is filled from $4000(.o file ) $4009 (.p file)
+// xor a; loop: nop or scf, jr nc loop, jp h0207 (jp h0203 - ZX80)
 reg   [7:0] tape_loader_patch[7] = '{8'haf, 8'h00, 8'h30, 8'hfd, 8'hc3, 8'h07, 8'h02};
 
 always @(posedge SPI_SCK) begin
@@ -280,21 +289,34 @@ always @(posedge clk_sys) begin
 	old_nM1 <= nM1;
 	tapewrite <= tapeloader; //delay writing by one cycle (until tape_in_byte arrives)
 	
-	if (~nM1 & old_nM1) begin
-		if (addr == 16'h0347 && tape_ready) begin
-			tape_loader_patch[1] = 8'h00; //nop
-			tape_addr <= 13'h0;
-			tapeloader <= 1;
-		end
-		if (addr >= 16'h03c3 || addr < 16'h0347) begin
-			tapeloader <= 0;
+	if (~nM1 & old_nM1 & tape_ready) begin
+		if (zx81) begin
+			if (addr == 16'h0347) begin
+				tape_loader_patch[1] <= 8'h00; //nop
+				tape_loader_patch[5] <= 8'h07; //0207h
+				tape_addr <= 13'h0;
+				tapeloader <= 1;
+			end
+			if (addr >= 16'h03c3 || addr < 16'h0347) begin
+				tapeloader <= 0;
+			end
+		end else begin
+			if (addr == 16'h0207) begin
+				tape_loader_patch[1] <= 8'h00; //nop
+				tape_loader_patch[5] <= 8'h03; //0203h
+				tape_addr <= 13'h0;
+				tapeloader <= 1;
+			end
+			if (addr >= 16'h024d || addr < 16'h0207) begin
+				tapeloader <= 0;
+			end
 		end
 	end
 	if (tapeloader) begin
 		if (tape_addr != ioctl_addr) begin
 			tape_addr <= tape_addr + 1'h1;
 		end else begin
-			tape_loader_patch[1] = 8'h37; //scf
+			tape_loader_patch[1] <= 8'h37; //scf
 		end
 	end
 end

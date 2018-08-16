@@ -83,8 +83,8 @@ always @(posedge clk) begin
 			if(sync_len < 255)
 				sync_len <= sync_len + 8'd1;
 
-			// if counter passes 80 then we are seeing a vsync
-			if(sync_len == 80) begin
+			// if counter passes 90 then we are seeing a vsync
+			if(sync_len == 90) begin
 				vs_out <= 1'b1;
 				line_cnt <= 10'd0;
 				scanline <= 0;
@@ -94,7 +94,7 @@ always @(posedge clk) begin
 
 		// reset scan doubler column counter on rising edge of csync (end of sync) or
 		// every 414 pixels
-		if((sd_col == 413) ||(csync && !csD && sync_len < 80)) begin
+		if((sd_col == 413) ||(csync && !csD && sync_len < 90)) begin
 			sd_col <= 9'd0;
 			scanline <= !scanline;
 		end else
@@ -107,7 +107,7 @@ always @(posedge clk) begin
 		end
 			
 		// zx81 column counter
-		if((csync && !csD && sync_len < 80)) begin
+		if((csync && !csD && sync_len < 90)) begin
 			zx_col <= 10'd0;
 		end else 
 			zx_col <= zx_col + 10'd1;

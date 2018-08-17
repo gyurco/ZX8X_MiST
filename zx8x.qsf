@@ -167,7 +167,6 @@ set_global_assignment -name USE_CONFIGURATION_DEVICE OFF
 # SignalTap II Assignments
 # ========================
 set_global_assignment -name ENABLE_SIGNALTAP OFF
-set_global_assignment -name USE_SIGNALTAP_FILE output_files/stp1.stp
 
 # Power Estimation Assignments
 # ============================
@@ -322,7 +321,9 @@ set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
 # end ENTITY(zx8x)
 # ----------------------
 
+set_location_assignment PIN_31 -to UART_RX
 set_global_assignment -name SYSTEMVERILOG_FILE zx8x.sv
+set_global_assignment -name SYSTEMVERILOG_FILE sdram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE keyboard.sv
 set_global_assignment -name QIP_FILE t80/T80.qip
 set_global_assignment -name SDC_FILE sys/constraints.sdc
@@ -331,5 +332,6 @@ set_global_assignment -name VERILOG_FILE sys/pll.v
 set_global_assignment -name QIP_FILE sys/pll.qip
 set_global_assignment -name VERILOG_FILE sys/osd.v
 set_global_assignment -name VERILOG_FILE sys/mist_io.v
-set_location_assignment PIN_31 -to UART_RX
+set_global_assignment -name SIGNALTAP_FILE output_files/stp1.stp
+
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

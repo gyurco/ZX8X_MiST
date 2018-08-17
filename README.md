@@ -3,6 +3,7 @@
 ### Features:
 - Based on Grant Searle's [ZX80 page](http://searle.hostei.com/grant/zx80/zx80.html)
 - Selectable ZX80/ZX81
+- 16k/32k/64k RAM packs
 - PAL/NTSC timings
 - Turbo loading of .o and .p files
 - Loading original tapes from the UART RX port

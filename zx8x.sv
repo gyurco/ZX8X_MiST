@@ -356,7 +356,7 @@ reg [7:0] shifter_reg;
 reg       video_out;
 reg       inverse;
 
-reg[6:0]  back_porch_counter = 1;
+reg[4:0]  back_porch_counter = 1;
 
 always @(posedge clk_sys) begin
 	reg old_csync;
@@ -385,7 +385,7 @@ always @(posedge clk_sys) begin
 	if (~vsync) row_counter <= 0;
 
 	if (~old_csync & csync) back_porch_counter <= 1;
-   if (back_porch_counter) back_porch_counter <= back_porch_counter + 1'd1;
+   if (ce_65 && back_porch_counter) back_porch_counter <= back_porch_counter + 1'd1;
 
 	end
 

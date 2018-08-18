@@ -399,13 +399,13 @@ always @(posedge clk_sys) begin
 
 	reg old_nM1;
 	old_nM1 <= nM1;
-	
+
 	if (~(nIORQ | nWR) & (~zx81 | ~NMIlatch)) ic11 <= 1;
 	if (~kbd_n & (~zx81 | ~NMIlatch)) ic11 <= 0;
-	
+
 	if (~nIORQ) ic18 <= 1;
 	if (~ic19_2) ic18 <= 0;
-	
+
 	if (old_nM1 & ~nM1) begin
 		ic19_1 <= ~ic18;
 		ic19_2 <= ic19_1;
@@ -423,12 +423,15 @@ assign nWAIT = ~(nHALT & ~nNMI) | ~zx81;
 assign nNMI = ~(NMIlatch & hsync) | ~zx81;
 
 always @(posedge clk_sys) begin
-	reg [7:0] counter = 0;
-	
-	if (ce_cpu_n) counter <= counter + 1'd1;
-	if (counter == 8'd207 | (~nM1 & ~nIORQ)) counter <= 0;
-	hsync = (counter >= 16 && counter <= 31);
-	
+	reg [7:0] sync_counter = 0;
+	reg       old_cpu_n;
+
+	old_cpu_n <= ce_cpu_n;
+
+	if (old_cpu_n & ~ce_cpu_n) sync_counter <= sync_counter + 1'd1;
+	if (sync_counter == 8'd207 | (~nM1 & ~nIORQ)) sync_counter <= 0;
+	hsync = (sync_counter >= 14 && sync_counter <= 29); //should be 16-31?
+
 	if (zx81) begin
 		if (~nIORQ & ~nWR & (addr[0] ^ addr[1])) NMIlatch <= addr[1];
 	end

@@ -67,7 +67,7 @@ localparam CONF_STR =
 	"F,O  P  ,Load tape;",
 	"O4,Model,ZX80,ZX81;",
 	"OAB,RAM size,1k,16k,32k,64k;",
-	"O8,Reverse joy axle,Off,On;",
+	"O8,Swap joy axle,Off,On;",
 	"O6,Video frequency,50Hz,60Hz;",
 	"O7,Inverse video,Off,On;",
 	"O9,Scanlines,Off,On;",

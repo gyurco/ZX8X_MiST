@@ -67,6 +67,7 @@ localparam CONF_STR =
 	"F,O  P  ,Load tape;",
 	"O4,Model,ZX80,ZX81;",
 	"OAB,RAM size,1k,16k,32k,64k;",
+	"O8,Reverse joy axle,Off,On;",
 	"O6,Video frequency,50Hz,60Hz;",
 	"O7,Inverse video,Off,On;",
 	"O9,Scanlines,Off,On;",
@@ -193,7 +194,7 @@ T80pa cpu
 	.DI(cpu_din)
 );
 
-wire [7:0] io_dout = kbd_n ? 8'hFF : { tape_in, hz50, 1'b0, key_data };
+wire [7:0] io_dout = kbd_n ? 8'hFF : { tape_in, hz50, 1'b0, key_data[4:0] & ({5{addr[12]}} | ~joykeys) };
 
 always_comb begin
 	case({nMREQ, ~nM1 | nIORQ | nRD})
@@ -203,11 +204,14 @@ always_comb begin
 	endcase
 end
 
-wire      tape_in = ~UART_RX;
-reg       init_reset = 1;
-reg       zx81;
-reg [1:0] mem_size; //00-1k, 01 - 16k 10 - 32k
-wire      hz50 = ~status[6];
+wire       tape_in = ~UART_RX;
+reg        init_reset = 1;
+reg        zx81;
+reg  [1:0] mem_size; //00-1k, 01 - 16k 10 - 32k
+wire       hz50 = ~status[6];
+wire       joyrev = status[8];
+wire [4:0] joykeys = joyrev ? {joystick_0[2], joystick_0[3], joystick_0[0], joystick_0[1], joystick_0[4]} :
+										{joystick_0[1:0], joystick_0[2], joystick_0[3], joystick_0[4]};
 
 always @(posedge clk_sys) begin
 	reg old_download;

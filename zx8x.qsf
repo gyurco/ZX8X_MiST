@@ -322,11 +322,14 @@ set_global_assignment -name PARTITION_COLOR 16764057 -section_id Top
 # ----------------------
 
 set_location_assignment PIN_31 -to UART_RX
+
 set_global_assignment -name SYSTEMVERILOG_FILE zx8x.sv
 set_global_assignment -name SYSTEMVERILOG_FILE sdram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE keyboard.sv
+set_global_assignment -name SYSTEMVERILOG_FILE YM2149.sv
 set_global_assignment -name QIP_FILE t80/T80.qip
 set_global_assignment -name SDC_FILE sys/constraints.sdc
+set_global_assignment -name VERILOG_FILE sys/sigma_delta_dac.v
 set_global_assignment -name VERILOG_FILE sys/scandoubler.v
 set_global_assignment -name VERILOG_FILE sys/pll.v
 set_global_assignment -name QIP_FILE sys/pll.qip

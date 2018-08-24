@@ -89,16 +89,17 @@ pll pll
 
 reg  ce_cpu_p;
 reg  ce_cpu_n;
-reg  ce_13,ce_65;
+reg  ce_13,ce_65,ce_psg;
 
 always @(negedge clk_sys) begin
-	reg [3:0] counter = 0;
+	reg [4:0] counter = 0;
 
 	counter  <=  counter + 1'd1;
 	ce_cpu_p <= !counter[3] & !counter[2:0];
 	ce_cpu_n <=  counter[3] & !counter[2:0];
 	ce_65    <= !counter[2:0];
 	ce_13    <= !counter[1:0];
+	ce_psg   <= !counter[4:0];
 end
 
 //////////////////   MIST ARM I/O   ///////////////////
@@ -194,7 +195,7 @@ T80pa cpu
 	.DI(cpu_din)
 );
 
-wire [7:0] io_dout = kbd_n ? 8'hFF : { tape_in, hz50, 1'b0, key_data[4:0] & ({5{addr[12]}} | ~joykeys) };
+wire [7:0] io_dout = kbd_n ? (psg_sel ? psg_out : 8'hFF) : { tape_in, hz50, 1'b0, key_data[4:0] & ({5{addr[12]}} | ~joykeys) };
 
 always_comb begin
 	case({nMREQ, ~nM1 | nIORQ | nRD})
@@ -480,6 +481,43 @@ assign VGA_R = R_out;
 assign VGA_G = G_out;
 assign VGA_B = B_out;
 
+////////////////////  SOUND //////////////////////
+wire [7:0] psg_out;
+wire       psg_sel = ~nIORQ & &addr[3:0]; //xF
+wire [7:0] psg_ch_a, psg_ch_b, psg_ch_c;
+
+YM2149 psg
+(
+	.CLK(clk_sys),
+	.CE(ce_psg),
+	.RESET(reset),
+	.BDIR(psg_sel & ~nWR),
+	.BC(psg_sel & (&addr[7:6] ^ nWR)),
+	.DI(cpu_dout),
+	.DO(psg_out),
+	.CHANNEL_A(psg_ch_a),
+	.CHANNEL_B(psg_ch_b),
+	.CHANNEL_C(psg_ch_c)
+);
+
+wire [8:0] audio_l = { 1'b0, psg_ch_a } + { 1'b0, psg_ch_c };
+wire [8:0] audio_r = { 1'b0, psg_ch_b } + { 1'b0, psg_ch_c };
+
+sigma_delta_dac #(7) dac_l
+(
+	.CLK(clk_sys),
+	.RESET(reset),
+	.DACin(audio_l[8:1]),
+	.DACout(AUDIO_L)
+);
+
+sigma_delta_dac #(7) dac_r
+(
+	.CLK(clk_sys),
+	.RESET(reset),
+	.DACin(audio_r[8:1]),
+	.DACout(AUDIO_R)
+);
 ////////////////////   HID   /////////////////////
 
 wire kbd_n = nIORQ | nRD | addr[0];

@@ -249,7 +249,7 @@ always@(posedge clk_sys) begin
 				// store incoming ps2 keyboard bytes 
 				8'h05: begin
 						got_ps2 <= 1;
-						ps2_key_raw[31:0] <= {ps2_key_raw[23:0], spi_data_in}; 						
+						ps2_key_raw[31:0] <= {ps2_key_raw[23:0], spi_data_in};
 						ps2_kbd_fifo[ps2_kbd_wptr] <= spi_data_in; 
 						ps2_kbd_wptr <= ps2_kbd_wptr + 1'd1;
 					end
@@ -444,51 +444,95 @@ end
 localparam UIO_FILE_TX      = 8'h53;
 localparam UIO_FILE_TX_DAT  = 8'h54;
 localparam UIO_FILE_INDEX   = 8'h55;
+// SPI receiver IO -> FPGA
+
+reg       spi_receiver_strobe_r;
+reg       spi_transfer_end_r;
+reg [7:0] spi_byte_in_r;
 
 // data_io has its own SPI interface to the io controller
-always@(posedge SPI_SCK, posedge SPI_SS2) begin
+// Read at spi_sck clock domain, assemble bytes for transferring to clk_sys
+always@(posedge SPI_SCK or posedge SPI_SS2) begin
+
 	reg  [6:0] sbuf;
-	reg  [7:0] cmd;
-	reg  [4:0] cnt;
+	reg  [2:0] bit_cnt;
+
+	if(SPI_SS2) begin
+		spi_receiver_strobe_r <= 0;
+		spi_transfer_end_r <= 1;
+		bit_cnt <= 0;
+	end else begin
+		spi_receiver_strobe_r <= 0;
+		spi_transfer_end_r <= 0;
+		
+		bit_cnt <= bit_cnt + 1'd1;
+
+		if(bit_cnt != 7)
+			sbuf[6:0] <= { sbuf[5:0], SPI_DI };
+
+		// finished reading a byte, prepare to transfer to clk_sys
+	if(bit_cnt == 7) begin
+			spi_byte_in_r <= { sbuf, SPI_DI};
+			spi_receiver_strobe_r <= 1;
+		end
+	end
+end
+
+
+always @(posedge clk_sys) begin
+
+	reg       spi_receiver_strobe;
+	reg       spi_transfer_end;
+	reg [7:0] spi_byte_in;
+	reg       spi_receiver_strobeD;
+	reg       spi_transfer_endD;
+	reg [7:0] spi_byte_inD;
+	reg [7:0] acmd;
+	reg [2:0] abyte_cnt;   // counts bytes
 	reg [13:0] addr;
 
-	if(SPI_SS2) cnt <= 0;
-	else begin
-		// don't shift in last bit. It is evaluated directly
-		// when writing to ram
-		if(cnt != 15) sbuf <= { sbuf[5:0], SPI_DI};
+	//synchronize between SPI and sys clock domains
+	spi_receiver_strobeD <= spi_receiver_strobe_r;
+	spi_receiver_strobe <= spi_receiver_strobeD;
+	spi_transfer_endD <= spi_transfer_end_r;
+	spi_transfer_end <= spi_transfer_endD;
+	spi_byte_inD <= spi_byte_in_r;
+	spi_byte_in <= spi_byte_inD;
 
-		// count 0-7 8-15 8-15 ... 
-		if(cnt < 15) cnt <= cnt + 1'd1;
-			else cnt <= 8;
+	ioctl_wr <= 0;
 
-		// finished command byte
-      if(cnt == 7) cmd <= {sbuf, SPI_DI};
+	if (~spi_transfer_endD & spi_transfer_end) begin
+		abyte_cnt <= 3'd0;
+	end else if (~spi_receiver_strobeD & spi_receiver_strobe) begin
+		if(~&abyte_cnt) abyte_cnt <= abyte_cnt + 1'd1;
 
-		// prepare/end transmission
-		if((cmd == UIO_FILE_TX) && (cnt == 15)) begin
-			// prepare 
-			if(SPI_DI) begin
-//				addr <= ioctl_index ? 14'd9 : 14'd0; //.p files loaded at $4009, ROM is at 0
-				addr <= 14'd0;
-				ioctl_download <= 1; 
-			end else begin
-				ioctl_addr <= addr;
-				ioctl_download <= 0;
-			end
+		if(abyte_cnt == 0) begin
+			acmd <= spi_byte_in;
+		end else begin
+			case (acmd)
+				UIO_FILE_TX: begin
+				// prepare 
+					if(spi_byte_in) begin
+						addr <= 14'd0;
+						ioctl_download <= 1; 
+					end else begin
+						ioctl_addr <= addr;
+						ioctl_download <= 0;
+					end
+				end
+
+				// transfer
+				UIO_FILE_TX_DAT: begin
+					ioctl_addr <= addr;
+					ioctl_dout <= spi_byte_in;
+					addr <= addr + 1'd1;
+					ioctl_wr <= 1;
+				end
+
+				// expose file (menu) index
+				UIO_FILE_INDEX: ioctl_index <= spi_byte_in;
+			endcase
 		end
-
-		// command 0x54: UIO_FILE_TX
-		if((cmd == UIO_FILE_TX_DAT) && (cnt == 15)) begin
-			ioctl_addr <= addr;
-			ioctl_dout <= {sbuf, SPI_DI};
-			addr <= addr + 1'd1;
-			ioctl_wr <= 1;
-		end else
-			ioctl_wr <= 0;
-
-      // expose file (menu) index
-      if((cmd == UIO_FILE_INDEX) && (cnt == 15)) ioctl_index <= {sbuf, SPI_DI};
 	end
 end
 

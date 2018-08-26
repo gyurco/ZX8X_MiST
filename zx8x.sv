@@ -217,8 +217,8 @@ wire [4:0] joykeys = joyrev ? {joystick_0[2], joystick_0[3], joystick_0[0], joys
 always @(posedge clk_sys) begin
 	reg old_download;
 	old_download <= ioctl_download;
-	if(~ioctl_download & old_download & !ioctl_index) init_reset <= 0;
-	if(~ioctl_download & old_download & ioctl_index) tape_ready <= 1;
+	if(~ioctl_download && old_download && !ioctl_index) init_reset <= 0;
+	if(~ioctl_download && old_download && ioctl_index) tape_ready <= 1;
 	
 	reset <= buttons[1] | status[0] | (mod[1] & Fn[11]) | init_reset;
 	if (reset) begin
@@ -276,7 +276,7 @@ always_comb begin
 	endcase
 end
 
-always @(posedge SPI_SCK) begin
+always @(posedge clk_sys) begin
 	if (ioctl_wr & !ioctl_index) begin
 		rom[ioctl_addr] <= ioctl_dout;
 	end
@@ -296,7 +296,7 @@ reg         tape_ready;  // there is data in the tape memory
 // xor a; loop: nop or scf, jr nc loop, jp h0207 (jp h0203 - ZX80)
 reg   [7:0] tape_loader_patch[7] = '{8'haf, 8'h00, 8'h30, 8'hfd, 8'hc3, 8'h07, 8'h02};
 
-always @(posedge SPI_SCK) begin
+always @(posedge clk_sys) begin
 	if (ioctl_wr & ioctl_index) begin
 		tape_ram[ioctl_addr] <= ioctl_dout;
 	end
@@ -358,7 +358,7 @@ reg       nopgen_store;
 reg [2:0] row_counter;
 wire      shifter_start = nMREQ & nopgen_store & ce_cpu_p & (~zx81 | ~NMIlatch);
 reg [7:0] shifter_reg;
-reg       video_out;
+wire      video_out = (~status[7] ^ shifter_reg[7] ^ inverse) & !back_porch_counter & csync;
 reg       inverse;
 
 reg[4:0]  back_porch_counter = 1;
@@ -383,8 +383,6 @@ always @(posedge clk_sys) begin
 	end else if (ce_65) begin
 		shifter_reg <= { shifter_reg[6:0], 1'b0 };
 	end
-	
-	video_out <= (~status[7] ^ shifter_reg[7] ^ inverse) & !back_porch_counter & csync; 
 
 	if (old_csync & ~csync)	row_counter <= row_counter + 1'd1;
 	if (~vsync) row_counter <= 0;
@@ -421,21 +419,22 @@ end
 // ZX81 upgrade
 // http://searle.hostei.com/grant/zx80/zx80nmi.html
 
-wire hsync;
-reg  NMIlatch;
+wire      hsync = (sync_counter >= 16 && sync_counter <= 31);
+reg       NMIlatch;
+reg [7:0] sync_counter = 0;
 
 assign nWAIT = ~(nHALT & ~nNMI) | ~zx81;
 assign nNMI = ~(NMIlatch & hsync) | ~zx81;
 
 always @(posedge clk_sys) begin
-	reg [7:0] sync_counter = 0;
 	reg       old_cpu_n;
 
 	old_cpu_n <= ce_cpu_n;
 
-	if (old_cpu_n & ~ce_cpu_n) sync_counter <= sync_counter + 1'd1;
-	if (sync_counter == 8'd207 | (~nM1 & ~nIORQ)) sync_counter <= 0;
-	hsync = (sync_counter >= 14 && sync_counter <= 29); //should be 16-31?
+	if (old_cpu_n & ~ce_cpu_n) begin
+		sync_counter <= sync_counter + 1'd1;
+	   if (sync_counter == 8'd206 | (~nM1 & ~nIORQ)) sync_counter <= 0;
+	end
 
 	if (zx81) begin
 		if (~nIORQ & ~nWR & (addr[0] ^ addr[1])) NMIlatch <= addr[1];

@@ -403,17 +403,18 @@ always @(posedge clk_sys) begin
 	reg old_nM1;
 	old_nM1 <= nM1;
 
-	if (~(nIORQ | nWR) & (~zx81 | ~NMIlatch)) ic11 <= 1;
-	if (~kbd_n & (~zx81 | ~NMIlatch)) ic11 <= 0;
+	if (~(nIORQ | nWR) & (~zx81 | ~NMIlatch)) ic11 <= 1; // stop vsync - any OUT
+	if (~kbd_n & (~zx81 | ~NMIlatch)) ic11 <= 0; // start vsync - keyboard IN
 
-	if (~nIORQ) ic18 <= 1;
-	if (~ic19_2) ic18 <= 0;
+	if (~nIORQ) ic18 <= 1;  // if IORQ - preset HSYNC start
+	if (~ic19_2) ic18 <= 0; // if sync active - preset sync end
 
+	// And 2 M1 later the presetted sync arrives at the csync pin
 	if (old_nM1 & ~nM1) begin
 		ic19_1 <= ~ic18;
 		ic19_2 <= ic19_1;
 	end
-	if (~ic11) ic19_2 <= 0;
+	if (~ic11) ic19_2 <= 0; //vsync keeps csync low
 end
 
 // ZX81 upgrade

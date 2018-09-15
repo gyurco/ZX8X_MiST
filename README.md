@@ -19,4 +19,5 @@ can receive tape data from the UART port.
 Reset (ALT-F11 or the Reset OSD option) closes the .o or .p file.
 
 ### Download precompiled binaries and system ROMs:
-Go to [releases](https://github.com/gyurco/ZX8X_MiST/tree/master/releases) folder.
+Go to [releases](https://github.com/gyurco/ZX8X_MiST/releases) folder. Copy the rbf
+and zx8x.rom file to the root of the SD card.

@@ -67,6 +67,7 @@ localparam CONF_STR =
 	"F,O  P  ,Load tape;",
 	"O4,Model,ZX80,ZX81;",
 	"OAB,RAM size,1k,16k,32k,64k;",
+    "OC,CHR128 support,Off,On;",
 	"O8,Swap joy axle,Off,On;",
 	"O6,Video frequency,50Hz,60Hz;",
 	"O7,Inverse video,Off,On;",
@@ -248,16 +249,19 @@ sdram ram
 wire        ram_ready;
 reg   [7:0] rom[12288];
 wire [12:0] rom_a  = nRFSH ? addr[12:0] : { addr[12:9], ram_data_latch[5:0], row_counter };
-wire [14:0] tape_load_addr = (&mem_size ? 15'h4000 : 15'h0) + ((ioctl_index[7:6] == 1) ? tape_addr + 4'd8 : tape_addr-1'd1);
+wire [15:0] tape_load_addr = 16'h4000 + ((ioctl_index[7:6] == 1) ? tape_addr + 4'd8 : tape_addr-1'd1);
 wire [15:0] ram_a;
 wire        ram_e_64k = &mem_size & (addr[13] | (addr[15] & nM1));
-wire			rom_e  = ~addr[14] & (~addr[12] | zx81) & ~ram_e_64k;
-wire        ram_e  = addr[14] | ram_e_64k;
+wire        rom_e  = ~addr[14] & (~addr[12] | zx81) & ~ram_e_64k & ~chr128_mem;
+wire        ram_e  = addr[14] | ram_e_64k | chr128_mem;
 wire        ram_we = ~nWR & ~nMREQ & ram_e;
 wire  [7:0] ram_in = tapeloader ? tape_in_byte : cpu_dout;
 wire  [7:0] rom_out;
 wire  [7:0] ram_out;
 wire  [7:0] mem_out;
+
+wire        chr128 = status[12];
+wire        chr128_mem = chr128 & (addr[15:12] == 4'h3);
 
 always_comb begin
 	casex({ tapeloader, rom_e, ram_e })
@@ -267,13 +271,14 @@ always_comb begin
 		default: mem_out = 8'd0;
 	endcase
 
-	casex({tapeloader, mem_size })
-	   'b1XX: ram_a = tape_load_addr;
-	   'b000: ram_a = { 6'b000000,             addr[9:0] }; //1k
-		'b001: ram_a = { 2'b00,                addr[13:0] }; //16k
-		'b010: ram_a = { 1'b0, addr[15] & nM1, addr[13:0] }; //32k
-		'b011: ram_a = { addr[15] & nM1,       addr[14:0] }; //64k
-	endcase
+    casex({tapeloader, mem_size, chr128_mem })
+        'b1_XX_X: ram_a = tape_load_addr;
+        'b0_00_0: ram_a = { 6'b010000,             addr[9:0] }; //1k
+        'b0_01_0: ram_a = { 2'b01,                addr[13:0] }; //16k
+        'b0_10_0: ram_a = { 1'b0, addr[15] & nM1, addr[13:0] } + 16'h4000; //32k
+        'b0_11_0: ram_a = { addr[15] & nM1,       addr[14:0] }; //64k
+        'b0_XX_1: ram_a = nRFSH ? addr[15:0] : { addr[15:10], addr[8] & ram_data_latch[7], ram_data_latch[5:0], row_counter }; //chr
+    endcase
 end
 
 always @(posedge clk_sys) begin

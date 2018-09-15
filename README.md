@@ -4,6 +4,7 @@
 - Based on Grant Searle's [ZX80 page](http://searle.hostei.com/grant/zx80/zx80.html)
 - Selectable ZX80/ZX81
 - 16k/32k/64k RAM packs
+- CHR128 board at $3000
 - YM2149 sound chip (ZON X-81 compatible)
 - Sinclar type joystick (keys 67890)
 - PAL/NTSC timings

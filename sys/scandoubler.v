@@ -51,7 +51,7 @@ wire h_de = (sd_col >= (2*32)) && (sd_col < 2*182);   // 176
 // vertical display goes from line 32 to 224.We add 16 border pixels top and bottom
 wire v_de = (line_cnt >= 16) && (line_cnt < 296);    // 240  
 
-wire hs = sd_col >= (2*192);
+wire hs = sd_col < (2*192);
 
 // line counter also for debug purposes
 reg [9:0] line_cnt /* synthesis noprune */;

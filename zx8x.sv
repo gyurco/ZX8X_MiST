@@ -67,7 +67,7 @@ localparam CONF_STR =
 	"F,O  P  ,Load tape;",
 	"O4,Model,ZX80,ZX81;",
 	"OAB,RAM size,1k,16k,32k,64k;",
-    "OC,CHR128 support,Off,On;",
+   "OC,CHR128 support,Off,On;",
 	"O8,Swap joy axle,Off,On;",
 	"O6,Video frequency,50Hz,60Hz;",
 	"O7,Inverse video,Off,On;",
@@ -112,6 +112,7 @@ wire  [7:0] joystick_1;
 wire  [1:0] buttons;
 wire  [1:0] switches;
 wire        scandoubler_disable;
+wire        ypbpr;
 wire [31:0] status;
 
 wire        ioctl_wr;
@@ -132,6 +133,7 @@ mist_io #(.STRLEN($size(CONF_STR)>>3)) user_io
 
 	.status(status),
 	.scandoubler_disable(scandoubler_disable),
+	.ypbpr(ypbpr),
 	.buttons(buttons),
 	.switches(switches),
 	.joystick_0(joystick_0),
@@ -400,7 +402,7 @@ always @(posedge clk_sys) begin
 // ZX80 sync generator
 reg ic11,ic18,ic19_1,ic19_2;
 //wire csync = ic19_2; //ZX80 original
-wire csync = vsync & ~hsync;
+wire csync = vsync & hsync;
 wire vsync = ic11;
 
 always @(posedge clk_sys) begin
@@ -425,12 +427,12 @@ end
 // ZX81 upgrade
 // http://searle.hostei.com/grant/zx80/zx80nmi.html
 
-wire      hsync = (sync_counter >= 16 && sync_counter <= 31);
+wire      hsync = ~(sync_counter >= 16 && sync_counter <= 31);
 reg       NMIlatch;
 reg [7:0] sync_counter = 0;
 
 assign nWAIT = ~(nHALT & ~nNMI) | ~zx81;
-assign nNMI = ~(NMIlatch & hsync) | ~zx81;
+assign nNMI = ~(NMIlatch & ~hsync) | ~zx81;
 
 always @(posedge clk_sys) begin
 	reg       old_cpu_n;
@@ -479,12 +481,22 @@ osd osd
 	.VSync(scandoubler_disable ? vsync : VS_sd_out)
 );
 
+wire [5:0] y, pb, pr;
+rgb2ypbpr rgb2ypbpr 
+(
+	.red   ( R_out ),
+	.green ( G_out ),
+	.blue  ( B_out ),
+	.y     ( y     ),
+	.pb    ( pb    ),
+	.pr    ( pr    )
+);
 
-assign VGA_HS = scandoubler_disable ? csync : HS_sd_out;
-assign VGA_VS = scandoubler_disable ? 1'd1 : VS_sd_out;
-assign VGA_R = R_out;
-assign VGA_G = G_out;
-assign VGA_B = B_out;
+assign VGA_HS = scandoubler_disable ? csync : (ypbpr ? !(HS_sd_out ^ VS_sd_out) : HS_sd_out);
+assign VGA_VS = (scandoubler_disable || ypbpr) ? 1'd1 : VS_sd_out;
+assign VGA_R = ypbpr?pr:R_out;
+assign VGA_G = ypbpr? y:G_out;
+assign VGA_B = ypbpr?pb:B_out;
 
 ////////////////////  SOUND //////////////////////
 wire [7:0] psg_out;

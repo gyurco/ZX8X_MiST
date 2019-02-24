@@ -30,7 +30,7 @@ module scandoubler (
   // output interface
   output reg          hs_out,
   output reg          vs_out,
-  output reg          v_out
+  output              v_out
 );
 
 // column counter running at 13MHz, twice the zx81 pixel clock
@@ -38,6 +38,7 @@ reg [8:0] sd_col;
 
 // column counter running at 13MHz, but counting through a whole zx81 line
 reg [9:0] zx_col;
+wire[9:0] zx_col_next = zx_col + 1'd1;
 
 // counter to determine sync lengths in the composity sync signal
 // used to differentiate between hsync and vsync
@@ -56,9 +57,16 @@ wire hs = sd_col < (2*192);
 // line counter also for debug purposes
 reg [9:0] line_cnt /* synthesis noprune */;
 
+reg scanline;
+
 // enough space for two complete lines (incl. border and sync),
 // each being 414 physical pixels wide
 reg       line_buffer[1023:0];
+reg [9:0] rdaddr;
+reg [9:0] wraddr;
+reg       q;
+
+assign v_out = (scanlines & scanline) ? 0 : q && v_de && h_de;
 
 // toggle bit to switch between both line buffers
 reg sd_toggle;
@@ -68,8 +76,6 @@ reg sd_video;
 
 // scan doublers hsync/vsync generator runs on 6.5MHz
 always @(posedge clk) begin
-
-   reg scanline;
 	
 	if (ce_2pix) begin
 
@@ -96,31 +102,36 @@ always @(posedge clk) begin
 		// every 414 pixels
 		if((sd_col == 413) ||(csync && !csD && sync_len < 90)) begin
 			sd_col <= 9'd0;
+			rdaddr[8:0] <= 0;
 			scanline <= !scanline;
-		end else
+		end else begin
 			sd_col <= sd_col + 9'd1;
+			rdaddr[8:0] <= rdaddr[8:0] + 1'd1;
+		end
 		
 		// change toggle bit at the end of each zx line
 		if(csync && !csD) begin
 			sd_toggle <= !sd_toggle;
+			rdaddr[9] <= sd_toggle;
+			wraddr[9] <= !sd_toggle;
 			line_cnt <= line_cnt + 10'd1;
 		end
 			
 		// zx81 column counter
 		if((csync && !csD && sync_len < 90)) begin
 			zx_col <= 10'd0;
-		end else 
-			zx_col <= zx_col + 10'd1;
+			wraddr[8:0] <= 0;
+		end else begin
+			zx_col <= zx_col_next;
+			wraddr[8:0] <= zx_col_next[9:1];
+		end
 
 		// fetch one line at half the scan doubler frequency
 		if(zx_col[0])
-			line_buffer[{sd_toggle, zx_col[9:1]}] <= v_in;
+			line_buffer[wraddr] <= v_in;
 		
 		// output other line at full scan doubler frequency
-		if (scanlines & scanline)
-			v_out <= 0;
-		else
-			v_out <= line_buffer[{!sd_toggle, sd_col}] && v_de && h_de;
+		q <= line_buffer[rdaddr];
 	end
 end
 endmodule

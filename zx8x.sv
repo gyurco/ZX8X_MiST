@@ -517,8 +517,26 @@ YM2149 psg
 	.CHANNEL_C(psg_ch_c)
 );
 
-wire [8:0] audio_l = { 1'b0, psg_ch_a } + { 1'b0, psg_ch_c };
-wire [8:0] audio_r = { 1'b0, psg_ch_b } + { 1'b0, psg_ch_c };
+// Route vsync through a high-pass filter to filter out sync signals from the
+// tape audio
+wire [7:0] mic_out;
+wire       mic_bit = mic_out > 8'd8 && mic_out < 8'd224;
+
+rc_filter_1o #(
+	.R_ohms_g(33000),
+	.C_p_farads_g(47000),
+	.fclk_hz_g(6500000),
+	.cwidth_g(18)) mic_filter
+(
+	.clk_i(clk_sys),
+	.clken_i(ce_65),
+	.res_i(reset),
+	.din_i({1'b0, vsync, 6'd0 }),
+	.dout_o(mic_out)
+);
+
+wire [8:0] audio_l = { 1'b0, psg_ch_a } + { 1'b0, psg_ch_c } + { mic_bit, 4'd0 };
+wire [8:0] audio_r = { 1'b0, psg_ch_b } + { 1'b0, psg_ch_c } + { mic_bit, 4'd0 };
 
 sigma_delta_dac #(7) dac_l
 (

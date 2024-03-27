@@ -67,7 +67,7 @@ localparam CONF_STR =
 	"F,O  P  ,Load tape;",
 	"O4,Model,ZX80,ZX81;",
 	"OAB,RAM size,1k,16k,32k,64k;",
-   "OC,CHR128 support,Off,On;",
+	"OC,CHR128 support,Off,On;",
 	"O8,Swap joy axle,Off,On;",
 	"O6,Video frequency,50Hz,60Hz;",
 	"O7,Inverse video,Off,On;",
@@ -363,7 +363,7 @@ wire      data_latch_enable = nRFSH & ce_cpu_n & ~nMREQ;
 reg [7:0] ram_data_latch;
 reg       nopgen_store;
 reg [2:0] row_counter;
-wire      shifter_start = nMREQ & nopgen_store & ce_cpu_p & (~zx81 | ~NMIlatch);
+wire      shifter_start = nMREQ & nopgen_store & (~zx81 | ~NMIlatch);
 reg [7:0] shifter_reg;
 wire      video_out = (~status[7] ^ shifter_reg[7] ^ inverse) & !back_porch_counter & csync;
 reg       inverse;
@@ -375,7 +375,6 @@ always @(posedge clk_sys) begin
 	reg old_shifter_start;
 	
 	old_csync <= csync;
-	old_shifter_start <= shifter_start;
 
 	if (data_latch_enable) begin
 		ram_data_latch <= mem_out;
@@ -384,7 +383,8 @@ always @(posedge clk_sys) begin
 
 	if (nMREQ & ce_cpu_p) inverse <= 0;
 
-	if (~old_shifter_start & shifter_start) begin
+	if (ce_cpu_p) old_shifter_start <= shifter_start;
+	if (ce_cpu_p & ~old_shifter_start & shifter_start) begin
 		shifter_reg <= (~nM1 & nopgen) ? 8'h0 : mem_out;
 		inverse <= ram_data_latch[7];
 	end else if (ce_65) begin
@@ -395,14 +395,14 @@ always @(posedge clk_sys) begin
 	if (~vsync) row_counter <= 0;
 
 	if (~old_csync & csync) back_porch_counter <= 1;
-   if (ce_65 && back_porch_counter) back_porch_counter <= back_porch_counter + 1'd1;
+	if (ce_65 && back_porch_counter) back_porch_counter <= back_porch_counter + 1'd1;
 
 	end
 
 // ZX80 sync generator
 reg ic11,ic18,ic19_1,ic19_2;
 //wire csync = ic19_2; //ZX80 original
-wire csync = vsync & hsync;
+wire csync = zx81 ? vsync & hsync : ic19_2;
 wire vsync = ic11;
 
 always @(posedge clk_sys) begin
@@ -435,13 +435,9 @@ assign nWAIT = ~(nHALT & ~nNMI) | ~zx81;
 assign nNMI = ~(NMIlatch & ~hsync) | ~zx81;
 
 always @(posedge clk_sys) begin
-	reg       old_cpu_n;
-
-	old_cpu_n <= ce_cpu_n;
-
-	if (old_cpu_n & ~ce_cpu_n) begin
+	if (ce_cpu_n) begin
 		sync_counter <= sync_counter + 1'd1;
-	   if (sync_counter == 8'd206 | (~nM1 & ~nIORQ)) sync_counter <= 0;
+		if (sync_counter == 8'd206 | (~nM1 & ~nIORQ)) sync_counter <= 0;
 	end
 
 	if (zx81) begin

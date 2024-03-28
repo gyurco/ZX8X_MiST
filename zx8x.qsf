@@ -158,7 +158,7 @@ set_global_assignment -name RESERVE_DCLK_AFTER_CONFIGURATION "USE AS REGULAR IO"
 set_global_assignment -name CYCLONEII_RESERVE_NCEO_AFTER_CONFIGURATION "USE AS REGULAR IO"
 set_global_assignment -name OPTIMIZE_HOLD_TIMING "ALL PATHS"
 set_global_assignment -name OPTIMIZE_MULTI_CORNER_TIMING ON
-set_global_assignment -name FITTER_EFFORT "FAST FIT"
+set_global_assignment -name FITTER_EFFORT "AUTO FIT"
 
 # Assembler Assignments
 # =====================
@@ -326,21 +326,20 @@ set_location_assignment PIN_31 -to UART_RX
 
 
 
-set_global_assignment -name USE_SIGNALTAP_FILE output_files/stp2.stp
+set_global_assignment -name USE_SIGNALTAP_FILE output_files/ioctl.stp
 set_global_assignment -name VHDL_FILE rc_filter_1o.vhd
-set_global_assignment -name SYSTEMVERILOG_FILE sys/rgb2ypbpr.sv
 set_global_assignment -name SYSTEMVERILOG_FILE zx8x.sv
 set_global_assignment -name SYSTEMVERILOG_FILE sdram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE keyboard.sv
+set_global_assignment -name QIP_FILE "mist-modules/mist.qip"
 set_global_assignment -name QIP_FILE T80/T80.qip
 set_global_assignment -name SYSTEMVERILOG_FILE YM2149.sv
 set_global_assignment -name SDC_FILE sys/constraints.sdc
 set_global_assignment -name VERILOG_FILE sys/sigma_delta_dac.v
-set_global_assignment -name VERILOG_FILE sys/scandoubler.v
+set_global_assignment -name VERILOG_FILE sys/zxscandoubler.v
 set_global_assignment -name VERILOG_FILE sys/pll.v
 set_global_assignment -name QIP_FILE sys/pll.qip
-set_global_assignment -name VERILOG_FILE sys/osd.v
-set_global_assignment -name VERILOG_FILE sys/mist_io.v
 set_global_assignment -name SIGNALTAP_FILE output_files/stp1.stp
 set_global_assignment -name SIGNALTAP_FILE output_files/stp2.stp
+set_global_assignment -name SIGNALTAP_FILE output_files/ioctl.stp
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top

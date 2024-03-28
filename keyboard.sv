@@ -41,8 +41,10 @@ module keyboard
 (
 	input             reset,
 	input             clk_sys,
-
-	input      [10:0] ps2_key,
+	input             key_pressed,
+	input       [7:0] key_code,
+	input             key_strobe,
+	input             key_extended,
 
 	input      [15:0] addr,
 	output      [4:0] key_data,
@@ -52,8 +54,7 @@ module keyboard
 );
 
 reg  [4:0] keys[7:0];
-reg        release_btn = 0;
-reg  [7:0] code;
+wire       release_btn = ~key_pressed;
 
 // Output addressed row to ULA
 assign key_data = (!addr[8]  ? keys[0] : 5'b11111)
@@ -65,7 +66,6 @@ assign key_data = (!addr[8]  ? keys[0] : 5'b11111)
                  &(!addr[14] ? keys[6] : 5'b11111)
                  &(!addr[15] ? keys[7] : 5'b11111);
 
-reg  input_strobe = 0;
 wire shift = mod[0];
 
 always @(posedge clk_sys) begin
@@ -83,8 +83,8 @@ always @(posedge clk_sys) begin
 		keys[7] <= 5'b11111;
 	end
 
-	if(input_strobe) begin
-		case(code)
+	if(key_strobe) begin
+		case(key_code)
 			8'h59, 8'h12: mod[0]<= ~release_btn; // left-right shift
 			8'h11: mod[1]<= ~release_btn; // alt
 			8'h14: mod[2]<= ~release_btn; // ctrl
@@ -101,7 +101,7 @@ always @(posedge clk_sys) begin
 			8'h78: Fn[11]<= ~release_btn; // F11
 		endcase
 
-		case(code)
+		case(key_code)
 			8'h12 : keys[0][0] <= release_btn; // Left shift (CAPS SHIFT)
 			8'h59 : keys[0][0] <= release_btn; // Right shift (CAPS SHIFT)
 			8'h1a : keys[0][1] <= release_btn; // Z
@@ -210,19 +210,6 @@ always @(posedge clk_sys) begin
 				end
 			default: ;
 		endcase
-	end
-end
-
-always @(posedge clk_sys) begin
-	reg old_state;
-
-	input_strobe <= 0;
-	old_state <= ps2_key[10];
-
-	if(old_state != ps2_key[10]) begin
-		release_btn <= ~ps2_key[9];
-		code <= ps2_key[7:0];
-		input_strobe <= 1;
 	end
 end
 

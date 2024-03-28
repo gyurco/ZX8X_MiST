@@ -1,7 +1,7 @@
 //============================================================================
 // 
 //  ZX80-ZX81 replica for MiST
-//  Copyright (C) 2018 György Szombathelyi
+//  Copyright (C) 2018 Gyorgy Szombathelyi
 //
 //  This program is free software; you can redistribute it and/or modify it
 //  under the terms of the GNU General Public License as published by the Free
@@ -92,73 +92,86 @@ reg  ce_cpu_p;
 reg  ce_cpu_n;
 reg  ce_13,ce_65,ce_psg;
 
-always @(negedge clk_sys) begin
+always @(posedge clk_sys) begin
 	reg [4:0] counter = 0;
 
-	counter  <=  counter + 1'd1;
-	ce_cpu_p <= !counter[3] & !counter[2:0];
-	ce_cpu_n <=  counter[3] & !counter[2:0];
-	ce_65    <= !counter[2:0];
-	ce_13    <= !counter[1:0];
-	ce_psg   <= !counter[4:0];
+	if (reset) begin
+		counter <= 5'h1f;
+		ce_cpu_p <= 0;
+		ce_cpu_n <= 0;
+		ce_65 <= 0;
+		ce_13 <= 0;
+		ce_psg <= 0;
+	end else begin
+		counter  <=  counter + 1'd1;
+		ce_cpu_p <= !counter[3] & !counter[2:0];
+		ce_cpu_n <=  counter[3] & !counter[2:0];
+		ce_65    <= !counter[2:0];
+		ce_13    <= !counter[1:0];
+		ce_psg   <= !counter[4:0];
+	end
 end
 
 //////////////////   MIST ARM I/O   ///////////////////
-wire [10:0] ps2_key;
-wire [24:0] ps2_mouse;
-
 wire  [7:0] joystick_0;
 wire  [7:0] joystick_1;
 wire  [1:0] buttons;
 wire  [1:0] switches;
 wire        scandoubler_disable;
 wire        ypbpr;
-wire [31:0] status;
+wire        no_csync;
+wire [63:0] status;
 
-wire        ioctl_wr;
-wire [13:0] ioctl_addr;
-wire  [7:0] ioctl_dout;
-wire        ioctl_download;
-wire  [7:0] ioctl_index;
-mist_io #(.STRLEN($size(CONF_STR)>>3)) user_io
+wire        key_pressed;
+wire  [7:0] key_code;
+wire        key_strobe;
+wire        key_extended;
+
+user_io #(.STRLEN($size(CONF_STR)>>3)) user_io
 (
 	.clk_sys(clk_sys),
-	.CONF_DATA0(CONF_DATA0),
-	.SPI_SCK(SPI_SCK),
-	.SPI_DI(SPI_DI),
-	.SPI_DO(SPI_DO),
-	.SPI_SS2(SPI_SS2),
+	.SPI_SS_IO(CONF_DATA0),
+	.SPI_CLK(SPI_SCK),
+	.SPI_MOSI(SPI_DI),
+	.SPI_MISO(SPI_DO),
 	
 	.conf_str(CONF_STR),
 
 	.status(status),
 	.scandoubler_disable(scandoubler_disable),
 	.ypbpr(ypbpr),
+	.no_csync(no_csync),
 	.buttons(buttons),
 	.switches(switches),
 	.joystick_0(joystick_0),
 	.joystick_1(joystick_1),
-	.ps2_key(ps2_key),
-
-	.sd_conf(0),
-	.sd_sdhc(1),
-	.ioctl_ce(1),
-	.ioctl_wr(ioctl_wr),
-	.ioctl_addr(ioctl_addr),
-	.ioctl_dout(ioctl_dout),
-	.ioctl_download(ioctl_download),
-	.ioctl_index(ioctl_index),
-
-	// unused
-	.ps2_kbd_clk(),
-	.ps2_kbd_data(),
-	.ps2_mouse_clk(),
-	.ps2_mouse_data(),
-	.joystick_analog_0(),
-	.joystick_analog_1(),
-	.sd_ack_conf()
+    .key_strobe     (key_strobe     ),
+    .key_pressed    (key_pressed    ),
+    .key_code       (key_code       ),
+    .key_extended   (key_extended   )
 );
 
+wire        ioctl_wr;
+wire [13:0] ioctl_addr;
+wire  [7:0] ioctl_dout;
+wire        ioctl_download;
+wire  [7:0] ioctl_index;
+
+data_io  data_io (
+      .clk_sys ( clk_sys ),
+      // io controller spi interface
+      .SPI_SCK ( SPI_SCK ),
+      .SPI_SS2 ( SPI_SS2 ),
+      .SPI_DI  ( SPI_DI  ),
+
+      .ioctl_download ( ioctl_download ),  // signal indicating an active rom download
+
+      // external ram interface
+      .ioctl_index  ( ioctl_index ),
+      .ioctl_wr     ( ioctl_wr    ),
+      .ioctl_addr   ( ioctl_addr  ),
+      .ioctl_dout   ( ioctl_dout  )
+);
 
 ///////////////////   CPU   ///////////////////
 wire [15:0] addr;
@@ -216,14 +229,17 @@ wire       hz50 = ~status[6];
 wire       joyrev = status[8];
 wire [4:0] joykeys = joyrev ? {joystick_0[2], joystick_0[3], joystick_0[0], joystick_0[1], joystick_0[4]} :
 										{joystick_0[1:0], joystick_0[2], joystick_0[3], joystick_0[4]};
-
+reg [15:0] reset_cnt = 16'hFFFF;
 always @(posedge clk_sys) begin
 	reg old_download;
 	old_download <= ioctl_download;
 	if(~ioctl_download && old_download && !ioctl_index) init_reset <= 0;
 	if(~ioctl_download && old_download && ioctl_index) tape_ready <= 1;
-	
-	reset <= buttons[1] | status[0] | (mod[1] & Fn[11]) | init_reset;
+
+	reset <= (reset_cnt != 0);
+	if (reset_cnt != 0) reset_cnt <= reset_cnt - 1'd1;
+	if (buttons[1] | status[0] | (mod[1] & Fn[11]) | init_reset) reset_cnt <= 16'hFFFF;
+
 	if (reset) begin
 		zx81 <= status[4];
 		mem_size <= status[11:10];
@@ -447,7 +463,7 @@ end
 
 wire       v_sd_out, HS_sd_out, VS_sd_out;
 
-scandoubler scandoubler
+zxscandoubler zxscandoubler
 (
 	.clk(clk_sys),
 	.ce_2pix(ce_13),
@@ -465,7 +481,11 @@ scandoubler scandoubler
 wire [5:0] R_out,G_out,B_out;
 osd osd
 (
-	.*,
+	.clk_sys(clk_sys),
+	.SPI_SCK(SPI_SCK),
+	.SPI_SS3(SPI_SS3),
+	.SPI_DI(SPI_DI),
+
 	.R_in((scandoubler_disable ? video_out : v_sd_out) ? 6'b111111 : 6'd0),
 	.G_in((scandoubler_disable ? video_out : v_sd_out) ? 6'b111111 : 6'd0),
 	.B_in((scandoubler_disable ? video_out : v_sd_out) ? 6'b111111 : 6'd0),
@@ -478,21 +498,30 @@ osd osd
 );
 
 wire [5:0] y, pb, pr;
-rgb2ypbpr rgb2ypbpr 
+wire       hs_out, vs_out, cs_out;
+RGBtoYPbPr #(6) RGBtoYPbPr
 (
-	.red   ( R_out ),
-	.green ( G_out ),
-	.blue  ( B_out ),
-	.y     ( y     ),
-	.pb    ( pb    ),
-	.pr    ( pr    )
+	.clk       ( clk_sys ),
+	.ena       ( ypbpr   ),
+	.red_in    ( R_out   ),
+	.green_in  ( G_out   ),
+	.blue_in   ( B_out   ),
+	.hs_in     ( scandoubler_disable ? hsync : HS_sd_out ),
+	.vs_in     ( scandoubler_disable ? vsync : VS_sd_out ),
+	.cs_in     ( csync   ),
+	.red_out   ( y       ),
+	.green_out ( pb      ),
+	.blue_out  ( pr      ),
+	.hs_out    ( hs_out  ),
+	.vs_out    ( vs_out  ),
+	.cs_out    ( cs_out  )
 );
 
-assign VGA_HS = scandoubler_disable ? csync : (ypbpr ? !(HS_sd_out ^ VS_sd_out) : HS_sd_out);
-assign VGA_VS = (scandoubler_disable || ypbpr) ? 1'd1 : VS_sd_out;
-assign VGA_R = ypbpr?pr:R_out;
-assign VGA_G = ypbpr? y:G_out;
-assign VGA_B = ypbpr?pb:B_out;
+assign VGA_HS = ((scandoubler_disable & !no_csync) || ypbpr) ? cs_out : hs_out;
+assign VGA_VS = ((scandoubler_disable & !no_csync) || ypbpr) ? 1'd1 : vs_out;
+assign VGA_R = pr;
+assign VGA_G = y;
+assign VGA_B = pb;
 
 ////////////////////  SOUND //////////////////////
 wire [7:0] psg_out;

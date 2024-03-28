@@ -16,7 +16,7 @@
 // You should have received a copy of the GNU General Public License 
 // along with this program.  If not, see <http://www.gnu.org/licenses/>. 
 
-module scandoubler (
+module zxscandoubler (
   // system interface
   input 	          clk,
   input            ce_2pix,
@@ -66,7 +66,7 @@ reg [9:0] rdaddr;
 reg [9:0] wraddr;
 reg       q;
 
-assign v_out = (scanlines & scanline) ? 0 : q && v_de && h_de;
+assign v_out = (scanlines & scanline) ? 1'b0 : q && v_de && h_de;
 
 // toggle bit to switch between both line buffers
 reg sd_toggle;

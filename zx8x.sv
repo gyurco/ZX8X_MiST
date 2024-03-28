@@ -23,40 +23,153 @@
 
 module zx8x
 (
-   input         CLOCK_27,   // Input clock 27 MHz
+	input         CLOCK_27,
+`ifdef USE_CLOCK_50
+	input         CLOCK_50,
+`endif
 
-   output  [5:0] VGA_R,
-   output  [5:0] VGA_G,
-   output  [5:0] VGA_B,
-   output        VGA_HS,
-   output        VGA_VS,
+	output        LED,
+	output [VGA_BITS-1:0] VGA_R,
+	output [VGA_BITS-1:0] VGA_G,
+	output [VGA_BITS-1:0] VGA_B,
+	output        VGA_HS,
+	output        VGA_VS,
 
-   output        LED,
+`ifdef USE_HDMI
+	output        HDMI_RST,
+	output  [7:0] HDMI_R,
+	output  [7:0] HDMI_G,
+	output  [7:0] HDMI_B,
+	output        HDMI_HS,
+	output        HDMI_VS,
+	output        HDMI_PCLK,
+	output        HDMI_DE,
+	inout         HDMI_SDA,
+	inout         HDMI_SCL,
+	input         HDMI_INT,
+`endif
 
-   output        AUDIO_L,
-   output        AUDIO_R,
+	input         SPI_SCK,
+	inout         SPI_DO,
+	input         SPI_DI,
+	input         SPI_SS2,    // data_io
+	input         SPI_SS3,    // OSD
+	input         CONF_DATA0, // SPI_SS for user_io
 
+`ifdef USE_QSPI
+	input         QSCK,
+	input         QCSn,
+	inout   [3:0] QDAT,
+`endif
+`ifndef NO_DIRECT_UPLOAD
+	input         SPI_SS4,
+`endif
+
+	output [12:0] SDRAM_A,
+	inout  [15:0] SDRAM_DQ,
+	output        SDRAM_DQML,
+	output        SDRAM_DQMH,
+	output        SDRAM_nWE,
+	output        SDRAM_nCAS,
+	output        SDRAM_nRAS,
+	output        SDRAM_nCS,
+	output  [1:0] SDRAM_BA,
+	output        SDRAM_CLK,
+	output        SDRAM_CKE,
+
+`ifdef DUAL_SDRAM
+	output [12:0] SDRAM2_A,
+	inout  [15:0] SDRAM2_DQ,
+	output        SDRAM2_DQML,
+	output        SDRAM2_DQMH,
+	output        SDRAM2_nWE,
+	output        SDRAM2_nCAS,
+	output        SDRAM2_nRAS,
+	output        SDRAM2_nCS,
+	output  [1:0] SDRAM2_BA,
+	output        SDRAM2_CLK,
+	output        SDRAM2_CKE,
+`endif
+
+	output        AUDIO_L,
+	output        AUDIO_R,
+`ifdef I2S_AUDIO
+	output        I2S_BCK,
+	output        I2S_LRCK,
+	output        I2S_DATA,
+`endif
+`ifdef I2S_AUDIO_HDMI
+	output        HDMI_MCLK,
+	output        HDMI_BCK,
+	output        HDMI_LRCK,
+	output        HDMI_SDATA,
+`endif
+`ifdef SPDIF_AUDIO
+	output        SPDIF,
+`endif
+`ifdef USE_AUDIO_IN
+	input         AUDIO_IN,
+`endif
 	input         UART_RX,
+	output        UART_TX
 
-   input         SPI_SCK,
-   output        SPI_DO,
-   input         SPI_DI,
-   input         SPI_SS2,
-   input         SPI_SS3,
-   input         CONF_DATA0,
-
-   output [12:0] SDRAM_A,
-   inout  [15:0] SDRAM_DQ,
-   output        SDRAM_DQML,
-   output        SDRAM_DQMH,
-   output        SDRAM_nWE,
-   output        SDRAM_nCAS,
-   output        SDRAM_nRAS,
-   output        SDRAM_nCS,
-   output  [1:0] SDRAM_BA,
-   output        SDRAM_CLK,
-   output        SDRAM_CKE
 );
+
+`ifdef NO_DIRECT_UPLOAD
+localparam bit DIRECT_UPLOAD = 0;
+wire SPI_SS4 = 1;
+`else
+localparam bit DIRECT_UPLOAD = 1;
+`endif
+
+`ifdef USE_QSPI
+localparam bit QSPI = 1;
+assign QDAT = 4'hZ;
+`else
+localparam bit QSPI = 0;
+`endif
+
+`ifdef VGA_8BIT
+localparam VGA_BITS = 8;
+`else
+localparam VGA_BITS = 6;
+`endif
+
+`ifdef USE_HDMI
+localparam bit HDMI = 1;
+assign HDMI_RST = 1'b1;
+`else
+localparam bit HDMI = 0;
+`endif
+
+`ifdef BIG_OSD
+localparam bit BIG_OSD = 1;
+`define SEP "-;",
+`else
+localparam bit BIG_OSD = 0;
+`define SEP
+`endif
+
+`ifdef USE_AUDIO_IN
+localparam bit USE_AUDIO_IN = 1;
+`else
+localparam bit USE_AUDIO_IN = 0;
+`endif
+
+// remove this if the 2nd chip is actually used
+`ifdef DUAL_SDRAM
+assign SDRAM2_A = 13'hZZZZ;
+assign SDRAM2_BA = 0;
+assign SDRAM2_DQML = 1;
+assign SDRAM2_DQMH = 1;
+assign SDRAM2_CKE = 0;
+assign SDRAM2_CLK = 0;
+assign SDRAM2_nCS = 1;
+assign SDRAM2_DQ = 16'hZZZZ;
+assign SDRAM2_nCAS = 1;
+assign SDRAM2_nRAS = 1;
+assign SDRAM2_nWE = 1;
+`endif
 
 assign LED = ~ioctl_download & ~tape_ready;
 
@@ -127,7 +240,22 @@ wire  [7:0] key_code;
 wire        key_strobe;
 wire        key_extended;
 
-user_io #(.STRLEN($size(CONF_STR)>>3)) user_io
+`ifdef USE_HDMI
+wire        i2c_start;
+wire        i2c_read;
+wire  [6:0] i2c_addr;
+wire  [7:0] i2c_subaddr;
+wire  [7:0] i2c_dout;
+wire  [7:0] i2c_din;
+wire        i2c_ack;
+wire        i2c_end;
+`endif
+
+user_io #(
+	.STRLEN(($size(CONF_STR)>>3)),
+	.ROM_DIRECT_UPLOAD(DIRECT_UPLOAD),
+	.FEATURES(32'h0 | (BIG_OSD << 13) | (HDMI << 14))
+	)
 (
 	.clk_sys(clk_sys),
 	.SPI_SS_IO(CONF_DATA0),
@@ -136,6 +264,17 @@ user_io #(.STRLEN($size(CONF_STR)>>3)) user_io
 	.SPI_MISO(SPI_DO),
 	
 	.conf_str(CONF_STR),
+
+`ifdef USE_HDMI
+	.i2c_start      (i2c_start      ),
+	.i2c_read       (i2c_read       ),
+	.i2c_addr       (i2c_addr       ),
+	.i2c_subaddr    (i2c_subaddr    ),
+	.i2c_dout       (i2c_dout       ),
+	.i2c_din        (i2c_din        ),
+	.i2c_ack        (i2c_ack        ),
+	.i2c_end        (i2c_end        ),
+`endif
 
 	.status(status),
 	.scandoubler_disable(scandoubler_disable),
@@ -221,7 +360,13 @@ always_comb begin
 	endcase
 end
 
-wire       tape_in = ~UART_RX;
+wire       tape_in;
+`ifdef USE_AUDIO_IN
+assign tape_in = AUDIO_IN;
+`else
+assign tape_in = ~UART_RX;
+`endif
+
 reg        init_reset = 1;
 reg        zx81;
 reg  [1:0] mem_size; //00-1k, 01 - 16k 10 - 32k
@@ -461,7 +606,7 @@ always @(posedge clk_sys) begin
 	end
 end
 
-wire       v_sd_out, HS_sd_out, VS_sd_out;
+wire       v_sd_out, HS_sd_out, VS_sd_out, BL_sd_out;
 
 zxscandoubler zxscandoubler
 (
@@ -475,21 +620,22 @@ zxscandoubler zxscandoubler
 
 	.hs_out(HS_sd_out),
 	.vs_out(VS_sd_out),
+	.blank_out(BL_sd_out),    
 	.v_out(v_sd_out)
 );
 
-wire [5:0] R_out,G_out,B_out;
-osd osd
+wire [7:0] R_out,G_out,B_out;
+osd #(.OUT_COLOR_DEPTH(8), .BIG_OSD(BIG_OSD)) osd
 (
 	.clk_sys(clk_sys),
 	.SPI_SCK(SPI_SCK),
 	.SPI_SS3(SPI_SS3),
 	.SPI_DI(SPI_DI),
 
-	.R_in((scandoubler_disable ? video_out : v_sd_out) ? 6'b111111 : 6'd0),
-	.G_in((scandoubler_disable ? video_out : v_sd_out) ? 6'b111111 : 6'd0),
-	.B_in((scandoubler_disable ? video_out : v_sd_out) ? 6'b111111 : 6'd0),
-	
+	.R_in((scandoubler_disable ? video_out : v_sd_out) ? 8'hFF : 8'd0),
+	.G_in((scandoubler_disable ? video_out : v_sd_out) ? 8'hFF : 8'd0),
+	.B_in((scandoubler_disable ? video_out : v_sd_out) ? 8'hFF : 8'd0),
+
 	.R_out(R_out),
 	.G_out(G_out),
 	.B_out(B_out),
@@ -497,9 +643,9 @@ osd osd
 	.VSync(scandoubler_disable ? vsync : VS_sd_out)
 );
 
-wire [5:0] y, pb, pr;
+wire [7:0] y, pb, pr;
 wire       hs_out, vs_out, cs_out;
-RGBtoYPbPr #(6) RGBtoYPbPr
+RGBtoYPbPr #(8) RGBtoYPbPr
 (
 	.clk       ( clk_sys ),
 	.ena       ( ypbpr   ),
@@ -519,9 +665,50 @@ RGBtoYPbPr #(6) RGBtoYPbPr
 
 assign VGA_HS = ((scandoubler_disable & !no_csync) || ypbpr) ? cs_out : hs_out;
 assign VGA_VS = ((scandoubler_disable & !no_csync) || ypbpr) ? 1'd1 : vs_out;
-assign VGA_R = pr;
-assign VGA_G = y;
-assign VGA_B = pb;
+assign VGA_R = pr[7:8-VGA_BITS];
+assign VGA_G = y[7:8-VGA_BITS];
+assign VGA_B = pb[7:8-VGA_BITS];
+
+`ifdef USE_HDMI
+i2c_master #(56_000_000) i2c_master (
+	.CLK         (clk_sys),
+	.I2C_START   (i2c_start),
+	.I2C_READ    (i2c_read),
+	.I2C_ADDR    (i2c_addr),
+	.I2C_SUBADDR (i2c_subaddr),
+	.I2C_WDATA   (i2c_dout),
+	.I2C_RDATA   (i2c_din),
+	.I2C_END     (i2c_end),
+	.I2C_ACK     (i2c_ack),
+
+	//I2C bus
+	.I2C_SCL     (HDMI_SCL),
+	.I2C_SDA     (HDMI_SDA)
+);
+
+osd #(.OUT_COLOR_DEPTH(8), .BIG_OSD(BIG_OSD)) osd_hdmi
+(
+	.clk_sys(clk_sys),
+	.SPI_SCK(SPI_SCK),
+	.SPI_SS3(SPI_SS3),
+	.SPI_DI(SPI_DI),
+
+	.R_in(v_sd_out ? 8'hFF : 8'd0),
+	.G_in(v_sd_out ? 8'hFF : 8'd0),
+	.B_in(v_sd_out ? 8'hFF : 8'd0),
+	
+	.R_out(HDMI_R),
+	.G_out(HDMI_G),
+	.B_out(HDMI_B),
+	.HSync(HS_sd_out),
+	.VSync(VS_sd_out)
+);
+
+assign HDMI_HS = HS_sd_out;
+assign HDMI_VS = VS_sd_out;
+assign HDMI_DE = !BL_sd_out;
+assign HDMI_PCLK = clk_sys;
+`endif
 
 ////////////////////  SOUND //////////////////////
 wire [7:0] psg_out;
@@ -578,6 +765,40 @@ sigma_delta_dac #(7) dac_r
 	.DACin(audio_r[8:1]),
 	.DACout(AUDIO_R)
 );
+
+`ifdef I2S_AUDIO
+i2s i2s (
+	.reset(1'b0),
+	.clk(clk_sys),
+	.clk_rate(32'd56_000_000),
+
+	.sclk(I2S_BCK),
+	.lrclk(I2S_LRCK),
+	.sdata(I2S_DATA),
+
+	.left_chan({1'b0, audio_l, 6'd0}),
+	.right_chan({1'b0, audio_r, 6'd0})
+);
+`ifdef I2S_AUDIO_HDMI
+assign HDMI_MCLK = 0;
+always @(posedge clk_sys) begin
+	HDMI_BCK <= I2S_BCK;
+	HDMI_LRCK <= I2S_LRCK;
+	HDMI_SDATA <= I2S_DATA;
+end
+`endif
+`endif
+
+`ifdef SPDIF_AUDIO
+spdif spdif
+(
+	.clk_i(clk_sys),
+	.rst_i(reset),
+	.clk_rate_i(32'd56_000_000),
+	.spdif_o(SPDIF),
+	.sample_i({1'b0, audio_r, 6'd0, 1'b0, audio_l, 6'd0})
+);
+`endif
 ////////////////////   HID   /////////////////////
 
 wire kbd_n = nIORQ | nRD | addr[0];

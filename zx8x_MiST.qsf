@@ -41,12 +41,12 @@
 # ========================
 set_global_assignment -name ORIGINAL_QUARTUS_VERSION 13.1
 set_global_assignment -name PROJECT_CREATION_TIME_DATE "21:40:24  MAY 17, 2014"
-set_global_assignment -name LAST_QUARTUS_VERSION "13.1 SP4.26"
+set_global_assignment -name LAST_QUARTUS_VERSION "22.1std.2 Lite Edition"
 set_global_assignment -name PROJECT_OUTPUT_DIRECTORY output_files
 set_global_assignment -name NUM_PARALLEL_PROCESSORS ALL
 set_global_assignment -name SMART_RECOMPILE ON
 set_global_assignment -name FLOW_ENABLE_IO_ASSIGNMENT_ANALYSIS ON
-set_global_assignment -name PRE_FLOW_SCRIPT_FILE "quartus_sh:build_id_verilog.tcl"
+set_global_assignment -name PRE_FLOW_SCRIPT_FILE "quartus_sh:build_id.tcl"
 
 # Pin & Location Assignments
 # ==========================

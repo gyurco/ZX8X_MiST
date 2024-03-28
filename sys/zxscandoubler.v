@@ -30,6 +30,7 @@ module zxscandoubler (
   // output interface
   output reg          hs_out,
   output reg          vs_out,
+  output              blank_out,
   output              v_out
 );
 
@@ -67,6 +68,7 @@ reg [9:0] wraddr;
 reg       q;
 
 assign v_out = (scanlines & scanline) ? 1'b0 : q && v_de && h_de;
+assign blank_out = !(line_cnt >= 40 && line_cnt < 264 && h_de);
 
 // toggle bit to switch between both line buffers
 reg sd_toggle;

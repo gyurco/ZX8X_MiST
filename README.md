@@ -1,7 +1,7 @@
 # ZX80/ZX81 for [MIST Board](https://github.com/mist-devel/mist-board/wiki)
 
 ### Features:
-- Based on Grant Searle's [ZX80 page](http://searle.hostei.com/grant/zx80/zx80.html)
+- Based on Grant Searle's [ZX80 page](http://searle.x10host.com/zx80/zx80.html)
 - Selectable ZX80/ZX81
 - 16k/32k/64k RAM packs
 - CHR128 board at $3000

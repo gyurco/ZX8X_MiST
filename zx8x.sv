@@ -1,7 +1,7 @@
 //============================================================================
 // 
 //  ZX80-ZX81 replica for MiST
-//  Copyright (C) 2018 Gyorgy Szombathelyi
+//  Copyright (C) 2018-2024 Gyorgy Szombathelyi
 //
 //  This program is free software; you can redistribute it and/or modify it
 //  under the terms of the GNU General Public License as published by the Free
@@ -177,20 +177,25 @@ assign LED = ~ioctl_download & ~tape_ready;
 localparam CONF_STR = 
 {
 	"ZX8X;;",
-	"F,O  P  ,Load tape;",
+	"F1,O  P  ,Load tape;",
+	"F2ZXCOL,COL,Load colorization;",
+	`SEP
 	"O4,Model,ZX80,ZX81;",
 	"OAB,RAM size,1k,16k,32k,64k;",
 	"OCD,UDG Support,Off,CHR$128,Quicksilva;",
+	"OE,Chroma 81,Off,On;",
 	"O8,Swap joy axle,Off,On;",
 	"O6,Video frequency,50Hz,60Hz;",
 	"O7,Inverse video,Off,On;",
 	"O9,Scanlines,Off,On;",
+	`SEP
 	"T0,Reset;",
 	"V,v1.0.",`BUILD_DATE
 };
 
 wire  [1:0] st_ram = status[11:10];
 wire  [1:0] st_udg = status[13:12];
+wire        st_chroma81 = status[14];
 
 ////////////////////   CLOCKS   ///////////////////
 wire clk_sys;
@@ -258,7 +263,7 @@ user_io #(
 	.ROM_DIRECT_UPLOAD(DIRECT_UPLOAD),
 	.FEATURES(32'h0 | (BIG_OSD << 13) | (HDMI << 14))
 	)
-(
+user_io (
 	.clk_sys(clk_sys),
 	.SPI_SS_IO(CONF_DATA0),
 	.SPI_CLK(SPI_SCK),
@@ -352,7 +357,7 @@ T80pa cpu
 	.DI(cpu_din)
 );
 
-wire [7:0] io_dout = kbd_n ? (psg_sel ? psg_out : 8'hFF) : { tape_in, hz50, 1'b0, key_data[4:0] & ({5{addr[12]}} | ~joykeys) };
+wire [7:0] io_dout = kbd_n ? ((psg_sel ? psg_out : 8'hff) & {2'b11, !chr81_sel, 1'b1, 4'hf}) : { tape_in, hz50, 1'b0, key_data[4:0] & ({5{addr[12]}} | ~joykeys) };
 
 always_comb begin
 	case({nMREQ, ~nM1 | nIORQ | nRD})
@@ -377,11 +382,12 @@ wire       joyrev = status[8];
 wire [4:0] joykeys = joyrev ? {joystick_0[2], joystick_0[3], joystick_0[0], joystick_0[1], joystick_0[4]} :
 										{joystick_0[1:0], joystick_0[2], joystick_0[3], joystick_0[4]};
 reg [15:0] reset_cnt = 16'hFFFF;
+reg        old_download;
+
 always @(posedge clk_sys) begin
-	reg old_download;
 	old_download <= ioctl_download;
-	if(~ioctl_download && old_download && !ioctl_index) init_reset <= 0;
-	if(~ioctl_download && old_download && ioctl_index) tape_ready <= 1;
+	if(~ioctl_download && old_download && ioctl_index == 0) init_reset <= 0;
+	if(~ioctl_download && old_download && ioctl_index[5:0] == 1) tape_ready <= 1;
 
 	reset <= (reset_cnt != 0);
 	if (reset_cnt != 0) reset_cnt <= reset_cnt - 1'd1;
@@ -417,13 +423,15 @@ wire [12:0] rom_a  = nRFSH ? addr[12:0] : { addr[12:9], ram_data_latch[5:0], row
 wire [15:0] tape_load_addr = 16'h4000 + ((ioctl_index[7:6] == 1) ? tape_addr + 4'd8 : tape_addr-1'd1);
 wire [15:0] ram_a;
 wire        ram_e_64k = &mem_size & (addr[13] | (addr[15] & nM1));
-wire        rom_e  = ~addr[14] & (~addr[12] | zx81) & ~ram_e_64k & ~chr128_mem & ~chrqs_mem;
-wire        ram_e  = addr[14] | ram_e_64k | chr128_mem | chrqs_mem;
+wire        rom_e  = ~addr[14] & (~addr[12] | zx81) & ~ram_e_64k & ~chr128_mem & ~chrqs_mem & ~chroma81_ram_e;
+wire        ram_e  = addr[14] | ram_e_64k | chr128_mem | chrqs_mem | chroma81_ram_e;
 wire        ram_we = ~nWR & ~nMREQ & ram_e;
 wire  [7:0] ram_in = tapeloader ? tape_in_byte : cpu_dout;
 wire  [7:0] rom_out;
 wire  [7:0] ram_out;
 wire  [7:0] mem_out;
+
+wire        chroma81_ram_e = st_chroma81 & addr[14] & addr[15] & nM1;
 
 wire        chr128 = st_udg == 1;
 wire        chr128_mem = chr128 & (addr[15:13] == 3'b001);
@@ -447,19 +455,20 @@ always_comb begin
 		default: mem_out = 8'd0;
 	endcase
 
-    casex({tapeloader, mem_size, chr128_mem, chrqs_mem})
-        'b1_XX_XX: ram_a = tape_load_addr;
-        'b0_00_00: ram_a = { 6'b010000,             addr[9:0] }; //1k
-        'b0_01_00: ram_a = { 2'b01,                addr[13:0] }; //16k
-        'b0_10_00: ram_a = { 1'b0, addr[15] & nM1, addr[13:0] } + 16'h4000; //32k
-        'b0_11_00: ram_a = { addr[15] & nM1,       addr[14:0] }; //64k
-        'b0_XX_1X: ram_a = nRFSH ? addr[15:0] : { addr[15:11], addr[9], addr[8] & ram_data_latch[7], ram_data_latch[5:0], row_counter }; //chr128
-        'b0_XX_01: ram_a = nRFSH ? addr[15:0] : { 4'h8, 2'b01, ram_data_latch[7], ram_data_latch[5:0], row_counter }; //chrqs
+    casex({tapeloader, mem_size, chr128_mem, chrqs_mem, chroma81_ram_e})
+        'b1_XX_XXX: ram_a = tape_load_addr;
+        'b0_00_000: ram_a = { 6'b010000,             addr[9:0] }; //1k
+        'b0_01_000: ram_a = { 2'b01,                addr[13:0] }; //16k
+        'b0_10_000: ram_a = { 1'b0, addr[15] & nM1, addr[13:0] } + 16'h4000; //32k
+        'b0_11_000: ram_a = { addr[15] & nM1,       addr[14:0] }; //64k
+        'b0_XX_1XX: ram_a = nRFSH ? addr[15:0] : { addr[15:11], addr[9], addr[8] & ram_data_latch[7], ram_data_latch[5:0], row_counter }; //chr128
+        'b0_XX_01X: ram_a = nRFSH ? addr[15:0] : { 4'h8, 2'b01, ram_data_latch[7], ram_data_latch[5:0], row_counter }; //chrqs
+        'b0_XX_001: ram_a = addr[15:0]; //chroma81 attribute RAM mirror in SDRAM
     endcase
 end
 
 always @(posedge clk_sys) begin
-	if (ioctl_wr & !ioctl_index) begin
+	if (ioctl_wr & ioctl_index == 0) begin
 		rom[ioctl_addr] <= ioctl_dout;
 	end
 end
@@ -479,7 +488,7 @@ reg         tape_ready;  // there is data in the tape memory
 reg   [7:0] tape_loader_patch[7] = '{8'haf, 8'h00, 8'h30, 8'hfd, 8'hc3, 8'h07, 8'h02};
 
 always @(posedge clk_sys) begin
-	if (ioctl_wr & ioctl_index) begin
+	if (ioctl_wr & ioctl_index[5:0] == 1) begin
 		tape_ram[ioctl_addr] <= ioctl_dout;
 	end
 end
@@ -539,16 +548,18 @@ reg [7:0] ram_data_latch;
 reg       nopgen_store;
 reg [2:0] row_counter;
 wire      shifter_start = nMREQ & nopgen_store & (~zx81 | ~NMIlatch);
+reg       old_shifter_start;
 reg [7:0] shifter_reg;
 wire      video_out = (~status[7] ^ shifter_reg[7] ^ inverse) & !back_porch_counter & csync;
 reg       inverse;
 
-reg[4:0]  back_porch_counter = 1;
+reg [7:0] paper_reg;
+wire      border = ~paper_reg[7];
+reg [4:0] back_porch_counter = 1;
 
 always @(posedge clk_sys) begin
 	reg old_csync;
-	reg old_shifter_start;
-	
+
 	old_csync <= csync;
 
 	if (data_latch_enable) begin
@@ -562,8 +573,10 @@ always @(posedge clk_sys) begin
 	if (ce_cpu_p & ~old_shifter_start & shifter_start) begin
 		shifter_reg <= (~nM1 & nopgen) ? 8'h0 : mem_out;
 		inverse <= ram_data_latch[7];
+		paper_reg <= 8'hff; // constantly reloaded during paper area
 	end else if (ce_65) begin
 		shifter_reg <= { shifter_reg[6:0], 1'b0 };
+		paper_reg <= { paper_reg[6:0], 1'b0 };
 	end
 
 	if (old_csync & ~csync)	row_counter <= row_counter + 1'd1;
@@ -620,7 +633,56 @@ always @(posedge clk_sys) begin
 	end
 end
 
-wire       v_sd_out, HS_sd_out, VS_sd_out, BL_sd_out;
+////////////////////  Chroma 81 //////////////////////
+reg   [7:0] attr_ram[16384];
+wire        attr_ram_we = (ioctl_wr & ioctl_index == 2 & ioctl_addr[13:10] == 0) || (chroma81_ram_e & ~nWR & ~nMREQ);
+wire  [7:0] attr_ram_din = (ioctl_wr & ioctl_index == 2) ? ioctl_dout : cpu_dout;
+wire [13:0] attr_ram_we_addr = (ioctl_wr & ioctl_index == 2) ? ioctl_addr[13:0] : addr[13:0];
+
+always @(posedge clk_sys) begin
+	if (attr_ram_we ) begin
+		attr_ram[attr_ram_we_addr] <= attr_ram_din;
+	end
+end
+
+reg         chr81_mode, chr81_ena;
+reg   [3:0] border_color;
+wire        chr81_sel = ~nIORQ & (addr == 16'h7fef) & st_chroma81;
+
+always @(posedge clk_sys) begin
+	if (reset)
+		{chr81_ena, chr81_mode, border_color} <= {1'b0, 1'b0, 4'hf};
+	else if (chr81_sel & ~nWR)
+		{chr81_ena, chr81_mode, border_color} <= cpu_dout[5:0];
+
+	// Enable Chroma81 with Mode 0 after .col file loading
+	if(~ioctl_download && old_download && ioctl_index == 2) begin
+		chr81_ena <= 1;
+		chr81_mode <= 0;
+	end
+	// Load border color from address aboove 1024
+	if (ioctl_wr & ioctl_index == 2 & ioctl_addr[13:10] != 0)
+		border_color <= ioctl_dout[3:0];
+end
+
+reg   [7:0] chr81_attr_dout;
+reg   [7:0] chr81_attr_latch;
+wire [13:0] chr81_attr_addr = nRFSH ? addr[13:0] : {4'd0, ram_data_latch[7], ram_data_latch[5:0], row_counter};
+reg   [7:0] chr81_attr;
+
+always @(posedge clk_sys) begin
+	if (data_latch_enable)
+		chr81_attr_latch <= chr81_attr_dout;
+	if (ce_cpu_p & ~old_shifter_start & shifter_start)
+		chr81_attr <= chr81_mode ? chr81_attr_latch : chr81_attr_dout;
+
+	chr81_attr_dout <= attr_ram[chr81_attr_addr];
+end
+
+wire  [3:0] chr81_video_out = (chr81_ena & st_chroma81) ? (border ? border_color : video_out ? chr81_attr[7:4] : chr81_attr[3:0]) : {4{video_out}};
+
+wire        HS_sd_out, VS_sd_out, BL_sd_out;
+wire  [3:0] v_sd_out;
 
 zxscandoubler zxscandoubler
 (
@@ -630,7 +692,7 @@ zxscandoubler zxscandoubler
 	.scanlines(status[9]),
 
 	.csync(csync),
-	.v_in(video_out),
+	.v_in(chr81_video_out),
 
 	.hs_out(HS_sd_out),
 	.vs_out(VS_sd_out),
@@ -638,7 +700,12 @@ zxscandoubler zxscandoubler
 	.v_out(v_sd_out)
 );
 
-wire [7:0] R_out,G_out,B_out;
+wire  [3:0] video = scandoubler_disable ? chr81_video_out : v_sd_out;
+wire  [3:0] R_in  = {video[1], {3{video[1] & video[3]}}};
+wire  [3:0] G_in  = {video[2], {3{video[2] & video[3]}}};
+wire  [3:0] B_in  = {video[0], {3{video[0] & video[3]}}};
+
+wire  [7:0] R_out,G_out,B_out;
 osd #(.OUT_COLOR_DEPTH(8), .BIG_OSD(BIG_OSD)) osd
 (
 	.clk_sys(clk_sys),
@@ -646,9 +713,9 @@ osd #(.OUT_COLOR_DEPTH(8), .BIG_OSD(BIG_OSD)) osd
 	.SPI_SS3(SPI_SS3),
 	.SPI_DI(SPI_DI),
 
-	.R_in((scandoubler_disable ? video_out : v_sd_out) ? 8'hFF : 8'd0),
-	.G_in((scandoubler_disable ? video_out : v_sd_out) ? 8'hFF : 8'd0),
-	.B_in((scandoubler_disable ? video_out : v_sd_out) ? 8'hFF : 8'd0),
+	.R_in({2{R_in}}),
+	.G_in({2{G_in}}),
+	.B_in({2{B_in}}),
 
 	.R_out(R_out),
 	.G_out(G_out),
@@ -669,9 +736,9 @@ RGBtoYPbPr #(8) RGBtoYPbPr
 	.hs_in     ( scandoubler_disable ? hsync : HS_sd_out ),
 	.vs_in     ( scandoubler_disable ? vsync : VS_sd_out ),
 	.cs_in     ( csync   ),
-	.red_out   ( y       ),
-	.green_out ( pb      ),
-	.blue_out  ( pr      ),
+	.red_out   ( pr      ),
+	.green_out ( y       ),
+	.blue_out  ( pb      ),
 	.hs_out    ( hs_out  ),
 	.vs_out    ( vs_out  ),
 	.cs_out    ( cs_out  )
@@ -700,6 +767,10 @@ i2c_master #(56_000_000) i2c_master (
 	.I2C_SDA     (HDMI_SDA)
 );
 
+wire  [3:0] R_sd_in  = {v_sd_out[1], {3{v_sd_out[1] & v_sd_out[3]}}};
+wire  [3:0] G_sd_in  = {v_sd_out[2], {3{v_sd_out[2] & v_sd_out[3]}}};
+wire  [3:0] B_sd_in  = {v_sd_out[0], {3{v_sd_out[0] & v_sd_out[3]}}};
+
 osd #(.OUT_COLOR_DEPTH(8), .BIG_OSD(BIG_OSD)) osd_hdmi
 (
 	.clk_sys(clk_sys),
@@ -707,10 +778,10 @@ osd #(.OUT_COLOR_DEPTH(8), .BIG_OSD(BIG_OSD)) osd_hdmi
 	.SPI_SS3(SPI_SS3),
 	.SPI_DI(SPI_DI),
 
-	.R_in(v_sd_out ? 8'hFF : 8'd0),
-	.G_in(v_sd_out ? 8'hFF : 8'd0),
-	.B_in(v_sd_out ? 8'hFF : 8'd0),
-	
+	.R_in({2{R_sd_in}}),
+	.G_in({2{G_sd_in}}),
+	.B_in({2{B_sd_in}}),
+
 	.R_out(HDMI_R),
 	.G_out(HDMI_G),
 	.B_out(HDMI_B),

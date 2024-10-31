@@ -25,13 +25,13 @@ module zxscandoubler (
 		    
   // video input
   input            csync,
-  input            v_in,
+  input [3:0]      v_in,
 
   // output interface
   output reg          hs_out,
   output reg          vs_out,
   output              blank_out,
-  output              v_out
+  output [3:0]        v_out
 );
 
 // column counter running at 13MHz, twice the zx81 pixel clock
@@ -62,12 +62,12 @@ reg scanline;
 
 // enough space for two complete lines (incl. border and sync),
 // each being 414 physical pixels wide
-reg       line_buffer[1023:0];
+reg [3:0] line_buffer[1023:0];
 reg [9:0] rdaddr;
 reg [9:0] wraddr;
-reg       q;
+reg [3:0] q;
 
-assign v_out = (scanlines & scanline) ? 1'b0 : q && v_de && h_de;
+assign v_out = (scanlines & scanline) ? 4'd0 : q & {4{v_de & h_de}};
 assign blank_out = !(line_cnt >= 40 && line_cnt < 264 && h_de);
 
 // toggle bit to switch between both line buffers

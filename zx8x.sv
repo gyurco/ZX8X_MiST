@@ -179,6 +179,7 @@ localparam CONF_STR =
 	"ZX8X;;",
 	"F1,O  P  ,Load tape;",
 	"F2ZXCOL,COL,Load colorization;",
+	"F3ZXCHR,CHR,Load chars;",
 	`SEP
 	"O4,Model,ZX80,ZX81;",
 	"OAB,RAM size,1k,16k,32k,64k;",
@@ -340,7 +341,7 @@ T80pa cpu
 	.CLK(clk_sys),
 	.CEN_p(ce_cpu_p),
 	.CEN_n(ce_cpu_n),
-	.WAIT_n(nWAIT),
+	.WAIT_n(nWAIT & !chrqs_dl),
 	.INT_n(nINT),
 	.NMI_n(nNMI),
 	.BUSRQ_n(1),
@@ -411,7 +412,7 @@ sdram ram
 	.dout(ram_out),
 	.din (ram_in),
 	.addr(ram_a),
-	.we(ram_we | tapewrite_we),
+	.we(ram_we | tapewrite_we | chrqs_we),
 	.rd(ram_e & (~nRFSH | (~nRD & ~nMREQ)) & ~ce_cpu_n & ~tapeloader),
 	.ready(ram_ready)
 );
@@ -425,7 +426,7 @@ wire        ram_e_64k = &mem_size & (addr[13] | (addr[15] & nM1));
 wire        rom_e  = ~addr[14] & (~addr[12] | zx81) & ~ram_e_64k & ~chr128_mem & ~chrqs_mem & ~chroma81_ram_e;
 wire        ram_e  = addr[14] | ram_e_64k | chr128_mem | chrqs_mem | chroma81_ram_e;
 wire        ram_we = ~nWR & ~nMREQ & ram_e;
-wire  [7:0] ram_in = tapeloader ? tape_in_byte : cpu_dout;
+wire  [7:0] ram_in = tapeloader ? tape_in_byte : chrqs_dl ? ioctl_dout : cpu_dout;
 wire  [7:0] rom_out;
 wire  [7:0] ram_out;
 wire  [7:0] mem_out;
@@ -435,11 +436,17 @@ wire        chroma81_ram_e = st_chroma81 & addr[14] & addr[15] & nM1;
 wire        chr128 = st_udg == 1;
 wire        chr128_mem = chr128 & (addr[15:13] == 3'b001);
 
+wire        chrqs_dl = ioctl_download & ioctl_index == 3;
+wire        chrqs_we = chrqs_dl & ioctl_wr;
+
 reg         chrqs_ready; // autodetect if the characters are uploaded
 always @(posedge clk_sys) begin
 	if (reset)
 		chrqs_ready <= 0;
-	else if (chrqs_mem & ~nWR)
+	else if (chrqs_mem & ~nWR & ~nMREQ)
+		chrqs_ready <= 1;
+
+	if (chrqs_we)
 		chrqs_ready <= 1;
 end
 
@@ -454,15 +461,16 @@ always_comb begin
 		default: mem_out = 8'd0;
 	endcase
 
-    casex({tapeloader, mem_size, chr128_mem, chrqs_mem, chroma81_ram_e})
-        'b1_XX_XXX: ram_a = tape_load_addr;
-        'b0_00_000: ram_a = { 6'b010000,             addr[9:0] }; //1k
-        'b0_01_000: ram_a = { 2'b01,                addr[13:0] }; //16k
-        'b0_10_000: ram_a = { 1'b0, addr[15] & nM1, addr[13:0] } + 16'h4000; //32k
-        'b0_11_000: ram_a = { addr[15] & nM1,       addr[14:0] }; //64k
-        'b0_XX_1XX: ram_a = nRFSH ? addr[15:0] : { addr[15:11], addr[9], addr[8] & ram_data_latch[7], ram_data_latch[5:0], row_counter }; //chr128
-        'b0_XX_01X: ram_a = nRFSH ? addr[15:0] : { 4'h8, 2'b01, ram_data_latch[7], ram_data_latch[5:0], row_counter }; //chrqs
-        'b0_XX_001: ram_a = addr[15:0]; //chroma81 attribute RAM mirror in SDRAM
+    casex({chrqs_dl, tapeloader, mem_size, chr128_mem, chrqs_mem, chroma81_ram_e})
+        'b1X_XX_XXX: ram_a = {4'h8, 2'b01, ioctl_addr[9:0]};
+        'b01_XX_XXX: ram_a = tape_load_addr;
+        'b00_00_000: ram_a = { 6'b010000,             addr[9:0] }; //1k
+        'b00_01_000: ram_a = { 2'b01,                addr[13:0] }; //16k
+        'b00_10_000: ram_a = { 1'b0, addr[15] & nM1, addr[13:0] } + 16'h4000; //32k
+        'b00_11_000: ram_a = { addr[15] & nM1,       addr[14:0] }; //64k
+        'b00_XX_1XX: ram_a = nRFSH ? addr[15:0] : { addr[15:11], addr[9], addr[8] & ram_data_latch[7], ram_data_latch[5:0], row_counter }; //chr128
+        'b00_XX_01X: ram_a = nRFSH ? addr[15:0] : { 4'h8, 2'b01, ram_data_latch[7], ram_data_latch[5:0], row_counter }; //chrqs
+        'b00_XX_001: ram_a = addr[15:0]; //chroma81 attribute RAM mirror in SDRAM
     endcase
 end
 

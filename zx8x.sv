@@ -260,7 +260,6 @@ wire        i2c_end;
 
 user_io #(
 	.STRLEN(($size(CONF_STR)>>3)),
-	.ROM_DIRECT_UPLOAD(DIRECT_UPLOAD),
 	.FEATURES(32'h0 | (BIG_OSD << 13) | (HDMI << 14))
 	)
 user_io (
